@@ -22,82 +22,115 @@ THE SOFTWARE.
 package cmd
 
 import (
-  "fmt"
-  "os"
-  "github.com/spf13/cobra"
+	"context"
+	"errors"
+	"fmt"
+	"os"
 
-  homedir "github.com/mitchellh/go-homedir"
-  "github.com/spf13/viper"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/stevegood/jpg-corrupt/internal/jpg"
 
+	homedir "github.com/mitchellh/go-homedir"
+	"github.com/spf13/viper"
 )
 
-
-var cfgFile string
-
+var (
+	cfgFile string
+	logger  *logrus.Entry
+)
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-  Use:   "jpg-corrupt",
-  Short: "A brief description of your application",
-  Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
+	Use:   "jpg-corrupt",
+	Short: "Corrupts a JPG file and adds artifacts to it.",
+	Long: `jpg-corrupt takes in a JPG file, reads it, segments it, and
+rearranges the segments to produce artifacts.
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-  // Uncomment the following line if your bare application
-  // has an action associated with it:
-  //	Run: func(cmd *cobra.Command, args []string) { },
+Additional flags can be passed to influence the output.
+  `,
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) < 1 {
+			return errors.New("requires a file argument")
+		}
+		return nil
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		filePath := args[0]
+		logger.Infof("Opening file at %s", filePath)
+		file, err := jpg.Open(filePath)
+		if err != nil {
+			logger.Fatal(err)
+		}
+
+		// TODO: corrupt the file (without actually corrupting it)
+		newJPG, err := jpg.Corrupt(file)
+		if err != nil {
+			logger.Fatalf("error while corrupting the file %v", err)
+		}
+
+		// delete the file if it already exists
+		if jpgExists := jpg.Exists(newJPG); jpgExists {
+			if err := jpg.Delete(newJPG); err != nil {
+				logger.Fatalf("error deleting file %v", err)
+			}
+		}
+		// write the file
+		if err := jpg.Write(newJPG); err != nil {
+			logger.Fatalf("error writing new file %v", err)
+		}
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-  if err := rootCmd.Execute(); err != nil {
-    fmt.Println(err)
-    os.Exit(1)
-  }
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }
 
 func init() {
-  cobra.OnInitialize(initConfig)
+	cobra.OnInitialize(initConfig)
 
-  // Here you will define your flags and configuration settings.
-  // Cobra supports persistent flags, which, if defined here,
-  // will be global for your application.
+	// Here you will define your flags and configuration settings.
+	// Cobra supports persistent flags, which, if defined here,
+	// will be global for your application.
 
-  rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.jpg-corrupt.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.jpg-corrupt.yaml)")
 
+	// Cobra also supports local flags, which will only run
+	// when this action is called directly.
+	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
-  // Cobra also supports local flags, which will only run
-  // when this action is called directly.
-  rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// Init logger
+	ctx := context.Background()
+	logger = logrus.New().WithContext(ctx)
 }
-
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
-  if cfgFile != "" {
-    // Use config file from the flag.
-    viper.SetConfigFile(cfgFile)
-  } else {
-    // Find home directory.
-    home, err := homedir.Dir()
-    if err != nil {
-      fmt.Println(err)
-      os.Exit(1)
-    }
+	if cfgFile != "" {
+		// Use config file from the flag.
+		viper.SetConfigFile(cfgFile)
+	} else {
+		// Find home directory.
+		home, err := homedir.Dir()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
 
-    // Search config in home directory with name ".jpg-corrupt" (without extension).
-    viper.AddConfigPath(home)
-    viper.SetConfigName(".jpg-corrupt")
-  }
+		// Search config in home directory with name ".jpg-corrupt" (without extension).
+		viper.AddConfigPath(home)
+		viper.SetConfigName(".jpg-corrupt")
+	}
 
-  viper.AutomaticEnv() // read in environment variables that match
+	viper.AutomaticEnv() // read in environment variables that match
 
-  // If a config file is found, read it in.
-  if err := viper.ReadInConfig(); err == nil {
-    fmt.Println("Using config file:", viper.ConfigFileUsed())
-  }
+	// If a config file is found, read it in.
+	if err := viper.ReadInConfig(); err == nil {
+		fmt.Println("Using config file:", viper.ConfigFileUsed())
+	}
 }
-
